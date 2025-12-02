@@ -9,6 +9,10 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
         <script>
+      var videoId = (new URLSearchParams(window.location.search)).get("videoId") || "";
+    </script>
+        
+        <script>
             var tag = document.createElement('script');
             tag.id = 'iframe-demo';
             tag.src = 'https://www.youtube.com/iframe_api';
