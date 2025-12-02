@@ -1,182 +1,205 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="utf-8" />
+  <head>
+    <!-- iOS: disable user zoom at UA level -->
     <title>Vuplex YouTube Player</title>
+    <meta name=""referrer"" content=""strict-origin-when-cross-origin"" />
+    <meta name='viewport'
+          content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover' />
+    
+    <!-- NEW: read videoId from URL ?videoId=... -->
+    <script>
+      var videoId = (new URLSearchParams(window.location.search)).get('videoId') || '';
+    </script>
 
-    <!-- Important: allow a referrer to be sent to YouTube -->
-    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <!-- iOS-only: block native pinch; relay pinch data to Unity -->
+    <script>
+      (function(){{
+        // Prevent WKWebView native page zoom gestures
+        ['gesturestart','gesturechange','gestureend'].forEach(function(type){{
+          document.addEventListener(type, function(e){{ e.preventDefault(); }}, {{ passive:false }});
+        }});
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        var pinchActive = false;
+        var t0 = null, t1 = null;
+        var startDist = 0, startAngle = 0, lastScale = 1;
+
+        function dist(a,b){{ var dx=a.clientX-b.clientX, dy=a.clientY-b.clientY; return Math.hypot(dx,dy); }}
+        function ang(a,b) {{ return Math.atan2(b.clientY-a.clientY, b.clientX-a.clientX); }}
+        function ctr(a,b) {{ return {{ x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2 }}; }}
+
+        function post(payload){{ 
+          try {{
+            if (window.vuplex && window.vuplex.postMessage) {{
+              window.vuplex.postMessage(JSON.stringify(payload));
+            }}
+          }} catch(_) {{}}
+        }}
+
+        document.addEventListener('touchstart', function(e){{
+          if (e.touches.length === 2) {{
+            e.preventDefault(); // stop native zoom
+            pinchActive = true;
+            t0 = e.touches[0]; t1 = e.touches[1];
+            startDist  = dist(t0, t1);
+            startAngle = ang(t0, t1);
+            lastScale  = 1;
+            var c = ctr(t0, t1);
+            post({{ type:'pinch', phase:'start', scale:1, angle:0, cx:c.x, cy:c.y, ds:0 }});
+          }}
+        }}, {{ passive:false }});
+
+        document.addEventListener('touchmove', function(e){{
+          // Block multi-touch move to prevent native zoom, but emit data
+          if (pinchActive && e.touches.length === 2) {{
+            e.preventDefault();
+            t0 = e.touches[0]; t1 = e.touches[1];
+            var d  = dist(t0, t1);
+            var a  = ang(t0, t1);
+            var s  = d / startDist;         // absolute scale since start
+            var da = a - startAngle;        // rotation delta
+            var c  = ctr(t0, t1);
+            var ds = s - lastScale;         // per-frame delta
+            lastScale = s;
+            post({{ type:'pinch', phase:'move', scale:s, angle:da, cx:c.x, cy:c.y, ds:ds }});
+          }}
+        }}, {{ passive:false }});
+
+        function endPinch(e){{ 
+          if (pinchActive) {{
+            e.preventDefault();
+            pinchActive = false;
+            post({{ type:'pinch', phase:'end' }});
+          }}
+        }}
+        document.addEventListener('touchend', endPinch,   {{ passive:false }});
+        document.addEventListener('touchcancel', endPinch,{{ passive:false }});
+      }})();
+    </script>
+
+    <!-- YouTube API and controls -->
+    <script>
+      var tag = document.createElement('script');
+      tag.id = 'iframe-demo';
+      tag.src = 'https://www.youtube.com/iframe_api';
+      var firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+      var youtubePlayer;
+      function onYouTubeIframeAPIReady() {{
+        console.log('onYouTubeIframeAPIReady');
+        youtubePlayer = new YT.Player('youtubePlayer', {{
+          events: {{
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange
+          }}
+        }});
+      }}
+
+      function onPlayerReady(event) {{
+        console.log('onPlayerReady: ' + event.data);
+        event.target.playVideo();
+        try {{ document.activeElement && document.activeElement.blur(); }} catch(e) {{}}
+      }}
+
+      function onPlayerStateChange(event) {{
+        console.log('onPlayerStateChange: ' + event.data);
+        window.vuplex && window.vuplex.postMessage && window.vuplex.postMessage(event.data);
+      }}
+
+      function togglePlayback() {{
+        console.log('togglePlayback: PlayerState = ' + youtubePlayer.getPlayerState());
+        if (youtubePlayer.getPlayerState() == YT.PlayerState.PLAYING) youtubePlayer.pauseVideo();
+        else if (youtubePlayer.getPlayerState() == YT.PlayerState.PAUSED) youtubePlayer.playVideo();
+      }}
+
+      var captionsOn = true;
+      function toggleCaptions() {{
+        captionsOn = !captionsOn;
+        if (captionsOn) {{
+          youtubePlayer.loadModule('captions'); youtubePlayer.loadModule('cc');
+        }} else {{
+          youtubePlayer.unloadModule('captions'); youtubePlayer.unloadModule('cc');
+        }}
+      }}
+    </script>
+
+    <!-- Single-finger swipe detector (unchanged behavior) -->
+    <script>
+      (function () {{
+        var startX = 0, startY = 0, startTime = 0;
+        var MIN_DIST_PX = 60;
+        var MAX_TIME_S  = 0.6;
+
+        function onTouchStart(e) {{
+          // Guard: ignore multi-touch here (pinch is handled above)
+          if (e.touches && e.touches.length !== 1) return;
+          var t = e.changedTouches[0];
+          startX = t.clientX;
+          startY = t.clientY;
+          startTime = performance.now();
+        }}
+
+        function onTouchEnd(e) {{
+          // Guard: only consider single-finger end for swipe
+          if (e.changedTouches && e.changedTouches.length !== 1) return;
+          var t = e.changedTouches[0];
+          var dx = t.clientX - startX;
+          var dy = t.clientY - startY;
+          var dist = Math.hypot(dx, dy);
+          if (dist < MIN_DIST_PX) return;
+
+          var elapsed = (performance.now() - startTime) / 1000;
+          if (MAX_TIME_S > 0 && elapsed > MAX_TIME_S) return;
+
+          var dir = Math.abs(dx) > Math.abs(dy)
+            ? (dx > 0 ? ""right"" : ""left"")
+            : (dy > 0 ? ""down"" : ""up"");
+
+          if (window.vuplex && window.vuplex.postMessage) {{
+            window.vuplex.postMessage(JSON.stringify({{
+              type: ""swipe"",
+              direction: dir,
+              dx: dx, dy: dy, dist: dist, elapsed: elapsed
+            }}));
+          }}
+        }}
+
+        document.addEventListener('touchstart', onTouchStart, {{ passive: true }});
+        document.addEventListener('touchend',   onTouchEnd,   {{ passive: true }});
+      }})();
+    </script>
 
     <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #000;
-        }
-
-        #player-container {
-            position: relative;
-            width: 100%;
-            height: 100%;
-        }
-
-        #youtubePlayer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: 0;
-        }
+      html, body {{
+        margin:0; padding:0; height:100%; overflow:hidden;
+        user-select:none; -webkit-user-select:none;
+        -webkit-touch-callout:none;
+        /* Important for iOS: don't let the UA interpret gestures */
+        touch-action:none;
+      }}
     </style>
+  </head>
+  <body>
+    <iframe id='youtubePlayer' width='420' height='315' allow='fullscreen'
+      style='left:0; top:0; height:100%; width:100%; position:absolute; border:0; pointer-events:none;'
+      src=''>
+    </iframe>
 
+    <!-- NEW: set iframe src using videoId from query string -->
     <script>
-        // --- Video ID & iframe URL setup -------------------------------------
-
-        // Read videoId from query string:
-        //   https://your-app.vercel.app/youtube-player.html?videoId=XXXXXXXXXXX
-        const urlParams = new URLSearchParams(window.location.search);
-        var videoId = urlParams.get("videoId") || urlParams.get("v") || "";
-
-        if (!videoId) {
-            console.error("No videoId provided in query string (?videoId=...).");
-        }
-
-        // Build the YouTube embed URL (mirrors your C# 'link' string)
-        function buildEmbedUrl() {
-            if (!videoId) {
-                return "";
-            }
-
-            return (
-                "https://www.youtube.com/embed/" +
-                videoId +
-                "?playlist=" + videoId +
-                "&enablejsapi=1" +
-                "&autoplay=1" +
-                "&loop=1" +
-                "&controls=0" +
-                "&cc_load_policy=1" +
-                "&rel=0"
-            );
-        }
-
-        // Set iframe src once DOM is ready
-        document.addEventListener("DOMContentLoaded", function () {
-            var iframe = document.getElementById("youtubePlayer");
-            var link = buildEmbedUrl();
-            if (iframe && link) {
-                iframe.src = link;
-                iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-            }
-
-            console.log("document.referrer:", document.referrer);
-        });
-
-        // --- YouTube IFrame API loader ---------------------------------------
-
-        var tag = document.createElement("script");
-        tag.id = "iframe-demo";
-        tag.src = "https://www.youtube.com/iframe_api";
-        var firstScriptTag = document.getElementsByTagName("script")[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-        // --- Player logic (kept as in your Unity string) ---------------------
-
-        var youtubePlayer;
-        var captionsOn = true;
-
-        function onYouTubeIframeAPIReady() {
-            console.log("onYouTubeIframeAPIReady");
-            youtubePlayer = new YT.Player("youtubePlayer", {
-                events: {
-                    "onReady": onPlayerReady,
-                    "onStateChange": onPlayerStateChange
-                }
-            });
-
-            console.log("youtubePlayer:", youtubePlayer);
-        }
-
-        function onPlayerReady(event) {
-            console.log("onPlayerReady:", event.data);
-            event.target.playVideo();
-        }
-
-        function onPlayerStateChange(event) {
-            console.log("onPlayerStateChange:", event.data);
-
-            // Send the numeric state back to Unity via Vuplex
-            // (Unity listens via WebView.MessageEmitted -> eventArgs.Value)
-            if (window.vuplex && window.vuplex.postMessage) {
-                window.vuplex.postMessage(event.data);
-            }
-
-            // You can keep / extend your logic here if needed
-            if (event.data === YT.PlayerState.PLAYING) {
-                // e.g. show pause icon on Unity side
-            } else if (event.data === YT.PlayerState.PAUSED) {
-                // e.g. show play icon on Unity side
-            }
-        }
-
-        // Called from Unity: webViewPrefab.WebView.ExecuteJavaScript("togglePlayback();");
-        function togglePlayback() {
-            if (!youtubePlayer || !youtubePlayer.getPlayerState) {
-                console.warn("togglePlayback(): player not ready yet");
-                return;
-            }
-
-            var state = youtubePlayer.getPlayerState();
-            console.log("togglePlayback: PlayerState =", state);
-
-            if (state === YT.PlayerState.PLAYING) {
-                youtubePlayer.pauseVideo();
-            } else if (state === YT.PlayerState.PAUSED ||
-                       state === YT.PlayerState.ENDED ||
-                       state === YT.PlayerState.CUED) {
-                youtubePlayer.playVideo();
-            }
-        }
-
-        // Called from Unity: webViewPrefab.WebView.ExecuteJavaScript("toggleCaptions();");
-        function toggleCaptions() {
-            if (!youtubePlayer) {
-                console.warn("toggleCaptions(): player not ready yet");
-                return;
-            }
-
-            captionsOn = !captionsOn;
-            console.log("toggleCaptions(): captionsOn =", captionsOn);
-
-            try {
-                if (captionsOn) {
-                    youtubePlayer.loadModule("captions");
-                    youtubePlayer.loadModule("cc");
-                } else {
-                    youtubePlayer.unloadModule("captions");
-                    youtubePlayer.unloadModule("cc");
-                }
-            } catch (e) {
-                console.warn("toggleCaptions error:", e);
-            }
-        }
+      (function() {{
+        if (!videoId) {{
+          console.error('No videoId provided in URL (?videoId=...)');
+          return;
+        }}
+        var iframe = document.getElementById('youtubePlayer');
+        if (!iframe) return;
+        iframe.src =
+          'https://www.youtube.com/embed/' + encodeURIComponent(videoId) +
+          '?playlist=' + encodeURIComponent(videoId) +
+          '&enablejsapi=1&autoplay=1&loop=1&controls=0&cc_load_policy=1&rel=0';
+      }})();
     </script>
-</head>
-
-<body>
-    <div id="player-container">
-        <!-- The YouTube IFrame API will take over this element -->
-        <iframe
-            id="youtubePlayer"
-            allow="fullscreen"
-            allowfullscreen>
-        </iframe>
-    </div>
-</body>
+  </body>
 </html>
