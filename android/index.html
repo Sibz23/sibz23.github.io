@@ -1,93 +1,139 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <title>Vuplex YouTube Player</title>
+  <head>
+    <title>Vuplex YouTube Player</title>
 
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-        <script>
+
+    <!-- Read videoId from URL ?videoId=... -->
+    <script>
       var videoId = (new URLSearchParams(window.location.search)).get("videoId") || "";
     </script>
-        
-        <script>
-            var tag = document.createElement('script');
-            tag.id = 'iframe-demo';
-            tag.src = 'https://www.youtube.com/iframe_api';
-            var firstScriptTag = document.getElementsByTagName('script')[0];
-            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
+    <!-- YouTube API and controls -->
+    <script>
+      // Dynamically load the YouTube iframe API
+      var tag = document.createElement("script");
+      tag.id = "iframe-demo";
+      tag.src = "https://www.youtube.com/iframe_api";
+      var firstScriptTag = document.getElementsByTagName("script")[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
-            var youtubePlayer;
-            function onYouTubeIframeAPIReady() {{
-                console.log(""onYouTubeIframeAPIReady"");
-                youtubePlayer = new YT.Player('youtubePlayer', {{
-                    events: {{
-                        'onReady': onPlayerReady,
-                        'onStateChange': onPlayerStateChange
-                    }}
-                }});
+      var youtubePlayer;
 
-                console.log('youtubePlayer: ' + youtubePlayer);
-            }};
+      function onYouTubeIframeAPIReady() {
+        console.log("onYouTubeIframeAPIReady");
+        youtubePlayer = new YT.Player("youtubePlayer", {
+          events: {
+            onReady: onPlayerReady,
+            onStateChange: onPlayerStateChange,
+          },
+        });
+      }
 
+      function onPlayerReady(event) {
+        console.log("onPlayerReady: " + event.data);
+        event.target.playVideo();
+        try {
+          document.activeElement && document.activeElement.blur();
+        } catch (e) {}
+      }
 
-            function onPlayerReady(event) {{
-                console.log('onPlayerReady: ' + event.data);
+      function onPlayerStateChange(event) {
+        console.log("onPlayerStateChange: " + event.data);
+        if (window.vuplex && window.vuplex.postMessage) {
+          window.vuplex.postMessage(event.data);
+        }
+      }
 
-                event.target.playVideo();
-            }}
+      function togglePlayback() {
+        if (!youtubePlayer) {
+          console.warn("togglePlayback: youtubePlayer not ready yet");
+          return;
+        }
+        console.log("togglePlayback: PlayerState = " + youtubePlayer.getPlayerState());
+        if (youtubePlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+          youtubePlayer.pauseVideo();
+        } else if (youtubePlayer.getPlayerState() === YT.PlayerState.PAUSED) {
+          youtubePlayer.playVideo();
+        } else {
+          youtubePlayer.playVideo();
+        }
+      }
+      window.togglePlayback = togglePlayback;
 
+      var captionsOn = true;
+      function toggleCaptions() {
+        if (!youtubePlayer) {
+          console.warn("toggleCaptions: youtubePlayer not ready yet");
+          return;
+        }
+        captionsOn = !captionsOn;
+        if (captionsOn) {
+          youtubePlayer.loadModule("captions");
+          youtubePlayer.loadModule("cc");
+        } else {
+          youtubePlayer.unloadModule("captions");
+          youtubePlayer.unloadModule("cc");
+        }
+      }
+      window.toggleCaptions = toggleCaptions;
 
-            function onPlayerStateChange(event) {{
-                console.log('onPlayerStateChange: ' + event.data);
+      // Debug flag to confirm this script ran
+      window.__ytControlScriptExecuted = true;
+      console.log(
+        "YT control script executed, window.__ytControlScriptExecuted =",
+        window.__ytControlScriptExecuted
+      );
+    </script>
 
-                window.vuplex.postMessage(event.data);
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        /* Optional: keep this if you still want to block default gestures */
+        touch-action: none;
+      }
+    </style>
+  </head>
 
-                if (event.data == YT.PlayerState.PLAYING) {{
-                    
-                }}
-                else if (event.data == YT.PlayerState.PAUSED) {{
-                    
-                }}
+  <body>
+    <iframe
+      id="youtubePlayer"
+      width="420"
+      height="315"
+      allow="fullscreen"
+      style="left:0; top:0; height:100%; width:100%; position:absolute; border:0; pointer-events:none;"
+      src=""
+    >
+    </iframe>
 
-            }}
-
-
-            function togglePlayback() {{
-                console.log('togglePlayback: PlayerState = ' + youtubePlayer.getPlayerState());
-
-                if (youtubePlayer.getPlayerState() == YT.PlayerState.PLAYING) {{
-                    youtubePlayer.pauseVideo();
-                }}
-                else if (youtubePlayer.getPlayerState() == YT.PlayerState.PAUSED) {{
-                    youtubePlayer.playVideo();
-                }}
-            }}
-
-            var captionsOn = true;
-
-            function toggleCaptions() {{
-                captionsOn = !captionsOn;
-
-                if (captionsOn) {{
-                    youtubePlayer.loadModule('captions');
-                    youtubePlayer.loadModule('cc');
-                }}
-                else {{
-                    youtubePlayer.unloadModule('captions');
-                    youtubePlayer.unloadModule('cc');
-                }}
-            }}
-        </script>
-    </head>
-
-    <body>
-        <iframe id="youtubePlayer" width="420" height="315" allow="fullscreen" 
-            style="left:-1; top:-1; height:100%; width:100%; position:absolute;"
-            src="https://www.youtube.com/embed/{videoId}?playlist={this.videoId}&enablejsapi=1&autoplay=1&loop=1&controls=0&cc_load_policy=1&rel=0">
-        </iframe>
-    </body>
+    <!-- Set iframe src using videoId from query string -->
+    <script>
+      (function () {
+        if (!videoId) {
+          console.error("No videoId provided in URL (?videoId=...)");
+          return;
+        }
+        var iframe = document.getElementById("youtubePlayer");
+        if (!iframe) return;
+        iframe.src =
+          "https://www.youtube.com/embed/" +
+          encodeURIComponent(videoId) +
+          "?playlist=" +
+          encodeURIComponent(videoId) +
+          "&enablejsapi=1&autoplay=1&loop=1&controls=0&cc_load_policy=1&rel=0";
+      })();
+    </script>
+  </body>
 </html>
