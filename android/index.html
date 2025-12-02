@@ -1,1 +1,82 @@
 
+<html>
+    <head>
+        <script>
+            var tag = document.createElement('script');
+            tag.id = 'iframe-demo';
+            tag.src = 'https://www.youtube.com/iframe_api';
+            var firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+
+            var youtubePlayer;
+            function onYouTubeIframeAPIReady() {{
+                console.log(""onYouTubeIframeAPIReady"");
+                youtubePlayer = new YT.Player('youtubePlayer', {{
+                    events: {{
+                        'onReady': onPlayerReady,
+                        'onStateChange': onPlayerStateChange
+                    }}
+                }});
+
+                console.log('youtubePlayer: ' + youtubePlayer);
+            }};
+
+
+            function onPlayerReady(event) {{
+                console.log('onPlayerReady: ' + event.data);
+
+                event.target.playVideo();
+            }}
+
+
+            function onPlayerStateChange(event) {{
+                console.log('onPlayerStateChange: ' + event.data);
+
+                window.vuplex.postMessage(event.data);
+
+                if (event.data == YT.PlayerState.PLAYING) {{
+                    
+                }}
+                else if (event.data == YT.PlayerState.PAUSED) {{
+                    
+                }}
+
+            }}
+
+
+            function togglePlayback() {{
+                console.log('togglePlayback: PlayerState = ' + youtubePlayer.getPlayerState());
+
+                if (youtubePlayer.getPlayerState() == YT.PlayerState.PLAYING) {{
+                    youtubePlayer.pauseVideo();
+                }}
+                else if (youtubePlayer.getPlayerState() == YT.PlayerState.PAUSED) {{
+                    youtubePlayer.playVideo();
+                }}
+            }}
+
+            var captionsOn = true;
+
+            function toggleCaptions() {{
+                captionsOn = !captionsOn;
+
+                if (captionsOn) {{
+                    youtubePlayer.loadModule('captions');
+                    youtubePlayer.loadModule('cc');
+                }}
+                else {{
+                    youtubePlayer.unloadModule('captions');
+                    youtubePlayer.unloadModule('cc');
+                }}
+            }}
+        </script>
+    </head>
+
+    <body>
+        <iframe id="youtubePlayer" width="420" height="315" allow="fullscreen" 
+            style="left:-1; top:-1; height:100%; width:100%; position:absolute;"
+            src="https://www.youtube.com/embed/{videoId}?playlist={this.videoId}&enablejsapi=1&autoplay=1&loop=1&controls=0&cc_load_policy=1&rel=0">
+        </iframe>
+    </body>
+</html>
