@@ -113,7 +113,8 @@
         if (youtubePlayer.getPlayerState() == YT.PlayerState.PLAYING) youtubePlayer.pauseVideo();
         else if (youtubePlayer.getPlayerState() == YT.PlayerState.PAUSED) youtubePlayer.playVideo();
       }}
-
+      window.togglePlayback = togglePlayback;
+      
       var captionsOn = true;
       function toggleCaptions() {{
         captionsOn = !captionsOn;
